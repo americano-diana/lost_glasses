@@ -10,9 +10,7 @@ import torch
 # ------------------------------------------------
 # Local imports
 # ------------------------------------------------
-from config import CAT_DOG_DATA
 from pathlib import Path
-from model import AlexNet
 
 # ============================================================
 # Path configuration
