@@ -25,8 +25,8 @@ CAT_DOG_DATA = PROJECT_ROOT / "cat_dog_data"
 
 # List path to raw datasets
 RAW_DATASET = CAT_DOG_DATA / "dataset"
-RAW_BLUR_2 = CAT_DOG_DATA / "dataset_blur_2_path"
-RAW_BLUR_5 = CAT_DOG_DATA / "dataset_blur_5_path"
+RAW_BLUR_2 = CAT_DOG_DATA / "dataset_blur_2"
+RAW_BLUR_5 = CAT_DOG_DATA / "dataset_blur_5"
 
 OUTPUT = PROJECT_ROOT / "outputs"
 
@@ -57,12 +57,15 @@ DOWNSCALE_FACTOR = 2 # None or 1 = full AlexNet, 2 = half, 4 = quarter
 # DataLoader
 # ------------------------------------------------
 
+IMAGE_SIZE = (256, 256) # Standard for AlexNet
 BATCH_SIZE = 128
 VALIDATION_RATIO = 0.20
 
 # 0 on a notebook, 2 or 4 if on a cluster
 NUM_WORKERS = 2
 
+# Faster CPU-to-GPU transfer when CUDA is available. 
+PIN_MEMORY = DEVICE.type == "cuda"
 
 # ------------------------------------------------
 # Training

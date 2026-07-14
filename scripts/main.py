@@ -30,7 +30,7 @@ from training import (
 
 def main():
     set_seed(config.SEED)
-
+    print("Starting main training function")
     # --------------------------------------------
     # Create output directory
     # --------------------------------------------
@@ -44,7 +44,7 @@ def main():
     )
 
     output_directory = (
-        config.OUTPUT_ROOT / run_name
+        config.OUTPUT / run_name
     )
 
     checkpoint_directory = (
@@ -72,6 +72,7 @@ def main():
     # Load datasets
     # --------------------------------------------
 
+    print("Creating dataloaders")
     blur_data = "blur_2"
 
     data = create_dataloaders(
@@ -115,7 +116,7 @@ def main():
     # --------------------------------------------
     # Create ExpertNet
     # --------------------------------------------
-
+    "Creating model instance..."
     model = AlexNet(
         num_classes=config.NUM_CLASSES,
         downscale=config.DOWNSCALE_FACTOR,
