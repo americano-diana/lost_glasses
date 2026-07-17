@@ -21,12 +21,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 # Define folder with the raw dataset
-CAT_DOG_DATA = PROJECT_ROOT / "cat_dog_data"
-
-# List path to raw datasets
-RAW_DATASET = CAT_DOG_DATA / "dataset"
-RAW_BLUR_2 = CAT_DOG_DATA / "dataset_blur_2"
-RAW_BLUR_5 = CAT_DOG_DATA / "dataset_blur_5"
+CICHY_DATA = PROJECT_ROOT / "cichy_data"
 
 OUTPUT = PROJECT_ROOT / "outputs"
 
@@ -35,7 +30,7 @@ OUTPUT = PROJECT_ROOT / "outputs"
 # ============================================================
 
 # Change name of experiment
-EXPERIMENT_NAME = "First_expernet_test"
+EXPERIMENT_NAME = "First_test"
 
 # Set seed number for reproducibility
 SEED = 42
