@@ -6,40 +6,31 @@ Config script for paths, model settings, training settings, checkpoints, and rep
 # ------------------------------------------------
 from pathlib import Path
 import torch
-import os
-from dotenv import load_dotenv # This is to load local environment variables like paths
+
+# ------------------------------------------------
+# Local imports
+# ------------------------------------------------
+from pathlib import Path
 
 # ============================================================
 # Path configuration
 # Note: All paths written with upper case
 # ============================================================
 
-load_dotenv() 
+# Set project root to the parent directory of current file
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
-# Loading scratch paths
-TRAIN_DATA = os.getenv("TRAIN_DATA_PATH")
-USERNAME = os.environ.get("USER", "unknown_user")
-SCRATCH_ROOT = Path(os.environ.get("SCRATCH", f"/scratch/{USERNAME}"))
-HOME_ROOT = Path.home()  
+# Define folder with the raw dataset
+CAT_DOG_DATA = PROJECT_ROOT / "cat_dog_data"
 
-# Setting project root
-PROJECT_NAME = "lost_glasses"
-PROJECT_ROOT = SCRATCH_ROOT / "PROJECT_NAME"
-
-# Output and checkpoints in /home
-OUTPUT_DIR = HOME_ROOT / "projects" / PROJECT_NAME / "outputs"
-CHECKPOINT_DIR = OUTPUT_DIR / "checkpoints"
-LOG_DIR = OUTPUT_DIR / "logs"
-
-# Define folder with the raw fmri data
-CICHY_DATA = PROJECT_ROOT / "cichy_data"
+OUTPUT = PROJECT_ROOT / "outputs"
 
 # ============================================================
 # Experiment config
 # ============================================================
 
 # Change name of experiment
-EXPERIMENT_NAME = "Test_pretraining_ecoset"
+EXPERIMENT_NAME = "First_test"
 
 # Set seed number for reproducibility
 SEED = 42
@@ -54,22 +45,22 @@ DEVICE = torch.device(
 # ============================================================
 
 # Model architecture params
-DOWNSCALE_FACTOR = 1 # None or 1 = full AlexNet, 2 = half
-NUM_CLASSES = 565 # EcoSet data classes
+NUM_CLASSES = 2
+DOWNSCALE_FACTOR = 2 # None or 1 = full AlexNet, 2 = half, 4 = quarter
 
 # ------------------------------------------------
 # DataLoader
 # ------------------------------------------------
 
 IMAGE_SIZE = (256, 256) # Standard for AlexNet
-BATCH_SIZE_TRAIN = 128
-BATCH_SIZE_VAL = 256
+BATCH_SIZE = 128
 VALIDATION_RATIO = 0.20
 
 # 0 on a notebook, 2 or 4 if on a cluster
 NUM_WORKERS = 2
-PERSISTENT_WORKERS = True
-PIN_MEMORY = True
+
+# Faster CPU-to-GPU transfer when CUDA is available. 
+PIN_MEMORY = DEVICE.type == "cuda"
 
 # ------------------------------------------------
 # Training
@@ -77,12 +68,10 @@ PIN_MEMORY = True
 
 NUM_PRETRAINING_EPOCHS = 5
 NUM_BLURRY_TRAINING_EPOCHS = 5
-MAX_TOTAL_EPOCHS = 30
 
-LEARNING_RATE = 1e-3
+LEARNING_RATE = 3e-4
 WEIGHT_DECAY = 1e-4
 
-EARLY_STOPPING_PATIENCE = 5
 
 # ------------------------------------------------
 # Learning-rate scheduler
