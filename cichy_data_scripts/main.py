@@ -324,13 +324,6 @@ def main():
             ),
         )
 
-        # Optional. Remove this if it noticeably slows training.
-        wandb.watch(
-            model,
-            log="gradients",
-            log_freq=500,
-        )
-
     # ------------------------------------------------
     # Training
     # ------------------------------------------------

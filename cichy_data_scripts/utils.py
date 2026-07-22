@@ -34,8 +34,8 @@ def set_seed(seed: int):
         torch.cuda.manual_seed_all(seed)
 
     # Favor reproducibility over maximum speed.
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
+    torch.backends.cudnn.deterministic = False
+    torch.backends.cudnn.benchmark = True
 
 
 # ============================================================

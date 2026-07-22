@@ -31,10 +31,14 @@ if _ecoset_path is None:
     raise RuntimeError( "ECOSET_DATA_PATH was not found in the environment. " "Add it to your .env file." ) 
 TRAIN_DATA = Path(_ecoset_path)
 
-# Sub-set indices for testing
-SPLIT_DIR = PROJECT_ROOT / "splits" 
-TRAIN_INDICES_PATH = ( SPLIT_DIR / "ecoset_train_300000_seed42.npy" ) 
-VAL_INDICES_PATH = ( SPLIT_DIR / "ecoset_val_10000_seed42.npy" )
+# Sub-indices splits testing
+#SPLIT_DIR = PROJECT_ROOT / "splits" 
+#TRAIN_INDICES_PATH = ( SPLIT_DIR / "ecoset_train_300000_seed42.npy" ) 
+#VAL_INDICES_PATH = ( SPLIT_DIR / "ecoset_val_10000_seed42.npy" )
+
+# Subsets for testing
+#TRAIN_SUBSET_SIZE = 10_000
+#VAL_SUBSET_SIZE = 1_000
 
 # Output and checkpoints in /home
 # Checkpoints and logs are kept under /home because scratch # storage may be temporary or periodically cleaned. 
@@ -51,7 +55,7 @@ CICHY_IMAGE_DIR = ( CICHY_DATA / "92_Image_Set" / "92images")
 # ============================================================
 
 # Change name of experiment
-EXPERIMENT_NAME = "Test_pretraining_ecoset"
+EXPERIMENT_NAME = "clear_alexnet_downscaled2_ecoset"
 
 # Set seed number for reproducibility
 SEED = 42
@@ -66,7 +70,7 @@ DEVICE = torch.device(
 # ============================================================
 
 # Model architecture params
-DOWNSCALE_FACTOR = 1 # None or 1 = full AlexNet, 2 = half
+DOWNSCALE_FACTOR = 2 # None or 1 = full AlexNet, 2 = half
 NUM_CLASSES = 565 # EcoSet data classes
 
 # --------------------------------------------------
@@ -98,12 +102,12 @@ BATCH_SIZE_TRAIN = 128
 BATCH_SIZE_VAL = 256
 
 # 0 on a notebook, 2 or 4 if on a cluster
-NUM_WORKERS = 2
+NUM_WORKERS = 4
 PIN_MEMORY = True
 
 # persistent_workers is invalid when NUM_WORKERS == 0. 
 PERSISTENT_WORKERS = NUM_WORKERS > 0 
-PREFETCH_FACTOR = 2
+PREFETCH_FACTOR = 4
 
 USE_AMP = True
 
@@ -114,7 +118,7 @@ USE_AMP = True
 # choose clear, mixed or blur
 TRAINING_CONDITION = "clear"
 
-MAX_EPOCHS = 30
+MAX_EPOCHS = 15
 
 LEARNING_RATE = 1e-3
 WEIGHT_DECAY = 1e-4
@@ -148,6 +152,6 @@ CREATE_NEW_INITIALIZATION = False
 USE_WANDB = True
 WANDB_ENTITY = os.getenv("WANDB_PATH")
 WANDB_PROJECT = "lost_glasses"                        
-WANDB_RUN_NAME = "ecoset_alexnet_pretraining"
+WANDB_RUN_NAME = "clear_ecoset_alexnet_pretraining"
 WANDB_TAGS = ["alexnet", "pre-train", "ecoset"]
-WANDB_NOTES = "Testing pre-training AlexNet on Ecoset"
+WANDB_NOTES = "Full pre-training AlexNet on Ecoset"

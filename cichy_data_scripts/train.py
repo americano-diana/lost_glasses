@@ -1,5 +1,5 @@
 """
-training.py
+train.py
 
 Reusable training utilities for pretraining the custom AlexNet
 architecture on Ecoset.
@@ -38,51 +38,24 @@ from tqdm.auto import tqdm
 # ============================================================
 
 def train_one_epoch(
-    model: nn.Module,
+    model,
     dataloader,
-    loss_function: nn.Module,
-    optimizer: torch.optim.Optimizer,
-    device: torch.device,
+    loss_function,
+    optimizer,
+    device,
     scaler,
-    use_amp: bool,
+    use_amp=True,
 ):
-    """
-    Train the model for one epoch.
-
-    Parameters
-    ----------
-    model:
-        Neural network to train.
-
-    dataloader:
-        Training DataLoader.
-
-    loss_function:
-        Classification loss, normally CrossEntropyLoss.
-
-    optimizer:
-        PyTorch optimizer.
-
-    device:
-        CPU or CUDA device.
-
-    scaler:
-        GradScaler used for mixed-precision training.
-
-    use_amp:
-        Whether automatic mixed precision is enabled.
-
-    Returns
-    -------
-    metrics:
-        Dictionary containing mean loss, accuracy percentage,
-        and sample count.
-    """
     model.train()
 
-    total_loss = 0.0
-    total_correct = 0
+    running_loss = 0.0
+    running_correct = 0
     total_samples = 0
+
+    amp_enabled = (
+        use_amp
+        and device.type == "cuda"
+    )
 
     progress_bar = tqdm(
         dataloader,
@@ -90,7 +63,9 @@ def train_one_epoch(
         leave=False,
     )
 
-    for images, labels in progress_bar:
+    for batch_index, (images, labels) in enumerate(
+        progress_bar
+    ):
         images = images.to(
             device,
             non_blocking=True,
@@ -99,36 +74,180 @@ def train_one_epoch(
         labels = labels.to(
             device,
             non_blocking=True,
-        )
+        ).long()
+
+        if labels.min().item() < 0:
+            raise ValueError(
+                f"Negative label in batch {batch_index}: "
+                f"{labels.min().item()}"
+            )
 
         optimizer.zero_grad(
-            set_to_none=True,
+            set_to_none=True
         )
 
         with torch.autocast(
             device_type=device.type,
-            enabled=use_amp,
+            enabled=amp_enabled,
         ):
-            predictions = model(images)
+            logits = model(images)
+
+            if labels.max().item() >= logits.shape[1]:
+                raise ValueError(
+                    f"Label {labels.max().item()} exceeds "
+                    f"model output dimension "
+                    f"{logits.shape[1]}."
+                )
 
             loss = loss_function(
-                predictions,
+                logits,
                 labels,
             )
+
+        if not torch.isfinite(loss):
+            raise RuntimeError(
+                f"Non-finite loss at batch "
+                f"{batch_index}: {loss.item()}"
+            )
+
+        batch_loss = loss.detach().item()
 
         scaler.scale(loss).backward()
         scaler.step(optimizer)
         scaler.update()
 
-        batch_size = labels.size(0)
+        batch_size = images.size(0)
+
+        predictions = logits.argmax(
+            dim=1
+        )
+
+        running_loss += (
+            batch_loss * batch_size
+        )
+
+        running_correct += (
+            predictions == labels
+        ).sum().item()
+
+        total_samples += batch_size
+
+        average_loss = (
+            running_loss / total_samples
+        )
+
+        average_accuracy = (
+            100.0
+            * running_correct
+            / total_samples
+        )
+
+        progress_bar.set_postfix(
+            batch_loss=f"{batch_loss:.4f}",
+            mean_loss=f"{average_loss:.4f}",
+            accuracy=f"{average_accuracy:.2f}%",
+        )
+
+    if total_samples == 0:
+        raise RuntimeError(
+            "The training DataLoader returned no samples."
+        )
+
+    return {
+        "loss": running_loss / total_samples,
+        "accuracy": (
+            100.0
+            * running_correct
+            / total_samples
+        ),
+        "samples": total_samples,
+    }
+
+
+# ============================================================
+# Evaluate without training
+# ============================================================
+
+@torch.inference_mode()
+def evaluate(
+    model: nn.Module,
+    dataloader,
+    loss_function: nn.Module,
+    device: torch.device,
+    use_amp: bool = True,
+):
+    """
+    Evaluate model loss and accuracy without updating parameters.
+    """
+    model.eval()
+
+    total_loss = 0.0
+    total_correct = 0
+    total_samples = 0
+
+    amp_enabled = (
+        use_amp
+        and device.type == "cuda"
+    )
+
+    progress_bar = tqdm(
+        dataloader,
+        desc="Validation",
+        leave=False,
+    )
+
+    for batch_index, (images, labels) in enumerate(
+        progress_bar
+    ):
+        images = images.to(
+            device,
+            non_blocking=True,
+        )
+
+        labels = labels.to(
+            device,
+            non_blocking=True,
+        ).long()
+
+        if labels.min().item() < 0:
+            raise ValueError(
+                f"Negative label in validation batch "
+                f"{batch_index}: {labels.min().item()}"
+            )
+
+        with torch.autocast(
+            device_type=device.type,
+            enabled=amp_enabled,
+        ):
+            logits = model(images)
+
+            if labels.max().item() >= logits.shape[1]:
+                raise ValueError(
+                    f"Label {labels.max().item()} exceeds "
+                    f"model output dimension "
+                    f"{logits.shape[1]}."
+                )
+
+            loss = loss_function(
+                logits,
+                labels,
+            )
+
+        if not torch.isfinite(loss):
+            raise RuntimeError(
+                f"Non-finite validation loss at batch "
+                f"{batch_index}: {loss.item()}"
+            )
+
+        batch_size = images.size(0)
+
+        predicted_classes = logits.argmax(
+            dim=1
+        )
 
         total_loss += (
             loss.detach().item()
             * batch_size
-        )
-
-        predicted_classes = predictions.argmax(
-            dim=1
         )
 
         total_correct += (
@@ -152,88 +271,6 @@ def train_one_epoch(
             loss=f"{running_loss:.4f}",
             accuracy=f"{running_accuracy:.2f}%",
         )
-
-    if total_samples == 0:
-        raise RuntimeError(
-            "The training DataLoader returned no samples."
-        )
-
-    return {
-        "loss": total_loss / total_samples,
-        "accuracy": (
-            100.0
-            * total_correct
-            / total_samples
-        ),
-        "samples": total_samples,
-    }
-
-
-# ============================================================
-# Evaluate without training
-# ============================================================
-
-@torch.inference_mode()
-def evaluate(
-    model: nn.Module,
-    dataloader,
-    loss_function: nn.Module,
-    device: torch.device,
-    use_amp: bool,
-):
-    """
-    Evaluate loss and accuracy without updating model parameters.
-    """
-    model.eval()
-
-    total_loss = 0.0
-    total_correct = 0
-    total_samples = 0
-
-    progress_bar = tqdm(
-        dataloader,
-        desc="Validation",
-        leave=False,
-    )
-
-    for images, labels in progress_bar:
-        images = images.to(
-            device,
-            non_blocking=True,
-        )
-
-        labels = labels.to(
-            device,
-            non_blocking=True,
-        )
-
-        with torch.autocast(
-            device_type=device.type,
-            enabled=use_amp,
-        ):
-            predictions = model(images)
-
-            loss = loss_function(
-                predictions,
-                labels,
-            )
-
-        batch_size = labels.size(0)
-
-        total_loss += (
-            loss.item()
-            * batch_size
-        )
-
-        predicted_classes = predictions.argmax(
-            dim=1
-        )
-
-        total_correct += (
-            predicted_classes == labels
-        ).sum().item()
-
-        total_samples += batch_size
 
     if total_samples == 0:
         raise RuntimeError(
@@ -270,10 +307,10 @@ def save_checkpoint(
     condition: str,
 ):
     """
-    Save everything needed to resume training or reload the model.
+    Save everything needed to resume training.
 
-    The recommended extension is .pt because the checkpoint is
-    produced with torch.save.
+    The checkpoint contains model weights, optimizer state,
+    scheduler state, AMP scaler state, history, and metadata.
     """
     path = Path(path)
 
@@ -285,15 +322,21 @@ def save_checkpoint(
     checkpoint = {
         "epoch": epoch,
         "condition": condition,
-        "best_validation_loss": best_validation_loss,
+        "best_validation_loss": (
+            best_validation_loss
+        ),
         "epochs_without_improvement": (
             epochs_without_improvement
         ),
         "model_settings": model_settings,
         "training_settings": training_settings,
         "history": history,
-        "model_state_dict": model.state_dict(),
-        "optimizer_state_dict": optimizer.state_dict(),
+        "model_state_dict": (
+            model.state_dict()
+        ),
+        "optimizer_state_dict": (
+            optimizer.state_dict()
+        ),
         "scheduler_state_dict": (
             scheduler.state_dict()
             if scheduler is not None
@@ -321,12 +364,12 @@ def load_checkpoint(
     device="cpu",
 ):
     """
-    Load a saved checkpoint.
+    Load a checkpoint and restore available training state.
 
     Returns
     -------
     checkpoint:
-        Full checkpoint dictionary.
+        The complete checkpoint dictionary.
     """
     path = Path(path)
 
@@ -345,38 +388,43 @@ def load_checkpoint(
         checkpoint["model_state_dict"]
     )
 
+    optimizer_state = checkpoint.get(
+        "optimizer_state_dict"
+    )
+
     if (
         optimizer is not None
-        and checkpoint.get(
-            "optimizer_state_dict"
-        ) is not None
+        and optimizer_state is not None
     ):
         optimizer.load_state_dict(
-            checkpoint["optimizer_state_dict"]
+            optimizer_state
         )
+
+    scheduler_state = checkpoint.get(
+        "scheduler_state_dict"
+    )
 
     if (
         scheduler is not None
-        and checkpoint.get(
-            "scheduler_state_dict"
-        ) is not None
+        and scheduler_state is not None
     ):
         scheduler.load_state_dict(
-            checkpoint["scheduler_state_dict"]
+            scheduler_state
         )
+
+    scaler_state = checkpoint.get(
+        "scaler_state_dict"
+    )
 
     if (
         scaler is not None
-        and checkpoint.get(
-            "scaler_state_dict"
-        ) is not None
+        and scaler_state is not None
     ):
         scaler.load_state_dict(
-            checkpoint["scaler_state_dict"]
+            scaler_state
         )
 
     return checkpoint
-
 
 # ============================================================
 # History utilities

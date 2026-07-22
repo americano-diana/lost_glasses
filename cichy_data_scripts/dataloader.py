@@ -9,9 +9,6 @@ Training conditions:
 
     mixed:
         Each training image has a configurable probability of being blurred.
-
-The same saved subset indices are used for both conditions so that the
-underlying training and validation images remain identical.
 """
 
 from pathlib import Path
@@ -25,8 +22,6 @@ from torchvision import transforms
 
 from config import (
     TRAIN_DATA,
-    TRAIN_INDICES_PATH,
-    VAL_INDICES_PATH,
     BATCH_SIZE_TRAIN,
     BATCH_SIZE_VAL,
     NUM_WORKERS,
@@ -38,6 +33,7 @@ from config import (
     BLUR_KERNEL_SIZE,
     BLUR_SIGMA_MIN,
     BLUR_SIGMA_MAX,
+    PREFETCH_FACTOR,
     SEED,
 )
 
@@ -310,6 +306,13 @@ def create_dataloaders(
     """
     Create Ecoset training and validation DataLoaders.
 
+    For the current speed test:
+
+    - training uses the first TRAIN_SUBSET_SIZE images;
+    - training samples are shuffled every epoch;
+    - validation uses the first VAL_SUBSET_SIZE images;
+    - validation remains clear and unshuffled.
+
     Parameters
     ----------
     condition:
@@ -319,6 +322,9 @@ def create_dataloaders(
         "mixed":
             Train on a dynamic mixture of clear and blurred images.
 
+        "blur":
+            Blur every training image.
+
     Returns
     -------
     train_loader:
@@ -327,79 +333,131 @@ def create_dataloaders(
     val_loader:
         Deterministic clear-image validation DataLoader.
     """
-    if condition not in {"clear", "mixed", "blur"}:
+    if condition not in {
+        "clear",
+        "mixed",
+        "blur",
+    }:
         raise ValueError(
-            "condition must be 'clear', 'mixed', or 'blur'."
+            "condition must be "
+            "'clear', 'mixed', or 'blur'."
         )
+
+    # ------------------------------------------------
+    # Full lazy HDF5 datasets
+    # ------------------------------------------------
 
     train_dataset = EcosetDataset(
         h5_path=TRAIN_DATA,
         split="train",
         condition=condition,
     )
-    # Validation remains clear for both training conditions.
+
+    # Validation remains clear for every condition.
     val_dataset = EcosetDataset(
         h5_path=TRAIN_DATA,
         split="val",
         condition="clear",
     )
 
-    train_indices = load_subset_indices(
-        indices_path=TRAIN_INDICES_PATH,
-        dataset_length=len(train_dataset),
-    )
+    # ------------------------------------------------
+    # Reproducible generators
+    # ------------------------------------------------
 
-    val_indices = load_subset_indices(
-        indices_path=VAL_INDICES_PATH,
-        dataset_length=len(val_dataset),
-    )
+    # Separate generators prevent validation-loader iteration
+    # from changing the training shuffle sequence.
+    train_generator = torch.Generator()
+    train_generator.manual_seed(SEED)
 
-    train_subset = Subset(
-        train_dataset,
-        train_indices,
-    )
+    val_generator = torch.Generator()
+    val_generator.manual_seed(SEED + 1)
 
-    val_subset = Subset(
-        val_dataset,
-        val_indices,
-    )
-
-    generator = torch.Generator()
-    generator.manual_seed(SEED)
+    # ------------------------------------------------
+    # Shared DataLoader settings
+    # ------------------------------------------------
 
     common_loader_arguments = {
         "num_workers": NUM_WORKERS,
         "pin_memory": PIN_MEMORY,
         "worker_init_fn": seed_worker,
-        "generator": generator,
         "persistent_workers": NUM_WORKERS > 0,
     }
 
-    # prefetch_factor is only valid when num_workers > 0.
+    # prefetch_factor is only valid when workers are enabled.
     if NUM_WORKERS > 0:
-        common_loader_arguments["prefetch_factor"] = 2
+        common_loader_arguments[
+            "prefetch_factor"
+        ] = PREFETCH_FACTOR
+
+    # ------------------------------------------------
+    # DataLoaders
+    # ------------------------------------------------
 
     train_loader = DataLoader(
-        train_subset,
+        train_dataset, # Full data
         batch_size=BATCH_SIZE_TRAIN,
         shuffle=True,
+        generator=train_generator,
         drop_last=False,
         **common_loader_arguments,
     )
 
     val_loader = DataLoader(
-        val_subset,
+        val_dataset, # Full data
         batch_size=BATCH_SIZE_VAL,
         shuffle=False,
+        generator=val_generator,
         drop_last=False,
         **common_loader_arguments,
     )
 
+    # ------------------------------------------------
+    # Verification
+    # ------------------------------------------------
+
     print(
         f"Created Ecoset loaders | "
         f"condition={condition} | "
-        f"train={len(train_subset):,} | "
-        f"val={len(val_subset):,}"
+        f"train={len(train_dataset):,} | "
+        f"val={len(val_dataset):,}"
     )
+
+    print(
+        f"Training batches: "
+        f"{len(train_loader):,}"
+    )
+
+    print(
+        f"Validation batches: "
+        f"{len(val_loader):,}"
+    )
+
+    expected_train_batches = int(
+        np.ceil(
+            len(train_dataset)
+            / BATCH_SIZE_TRAIN
+        )
+    )
+
+    expected_val_batches = int(
+        np.ceil(
+            len(val_dataset)
+            / BATCH_SIZE_VAL
+        )
+    )
+
+    if len(train_loader) != expected_train_batches:
+        raise RuntimeError(
+            "Unexpected number of training batches: "
+            f"expected {expected_train_batches}, "
+            f"found {len(train_loader)}."
+        )
+
+    if len(val_loader) != expected_val_batches:
+        raise RuntimeError(
+            "Unexpected number of validation batches: "
+            f"expected {expected_val_batches}, "
+            f"found {len(val_loader)}."
+        )
 
     return train_loader, val_loader
