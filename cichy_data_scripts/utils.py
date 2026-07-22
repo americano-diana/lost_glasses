@@ -139,13 +139,13 @@ def initialize_wandb(
     model_settings: dict,
     training_settings: dict,
     data_path,
-    train_indices_path,
-    val_indices_path,
 ):
     """
     Initialize a Weights & Biases run.
 
     The final run name includes the training condition and seed.
+    Model, training, and dataset settings are stored in the
+    W&B run configuration.
     """
     run_name = (
         f"{run_name_base}_{condition}_seed{seed}"
@@ -156,23 +156,19 @@ def initialize_wandb(
         f"seed-{seed}",
     ]
 
+    run_config = {
+        **model_settings,
+        **training_settings,
+        "data_path": str(data_path),
+    }
+
     run = wandb.init(
         entity=entity,
         project=project,
         name=run_name,
         tags=run_tags,
         notes=notes,
-        config={
-            **model_settings,
-            **training_settings,
-            "data_path": str(data_path),
-            "train_indices_path": str(
-                train_indices_path
-            ),
-            "val_indices_path": str(
-                val_indices_path
-            ),
-        },
+        config=run_config,
     )
 
     return run

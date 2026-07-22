@@ -36,11 +36,9 @@ from config import (
     SCHEDULER_MIN_LR,
     SCHEDULER_PATIENCE,
     SEED,
-    TRAIN_INDICES_PATH,
     TRAINING_CONDITION,
     USE_AMP,
     USE_WANDB,
-    VAL_INDICES_PATH,
     WANDB_ENTITY,
     WANDB_NOTES,
     WANDB_PROJECT,
@@ -104,8 +102,11 @@ def main():
     # ------------------------------------------------
 
     condition_checkpoint_dir = (
-        CHECKPOINT_DIR
-        / f"alexnet_ecoset_{condition}"
+    CHECKPOINT_DIR
+    / (
+        f"alexnet_ecoset_{condition}"
+        f"_downscale{DOWNSCALE_FACTOR}"
+    )
     )
 
     condition_checkpoint_dir.mkdir(
@@ -114,8 +115,12 @@ def main():
     )
 
     shared_initialization_path = (
-        CHECKPOINT_DIR
-        / "shared_initialization.pt"
+    CHECKPOINT_DIR
+    / (
+        f"shared_initialization"
+        f"_downscale{DOWNSCALE_FACTOR}"
+        f"_seed{SEED}.pt"
+    )
     )
 
     # ------------------------------------------------
@@ -130,14 +135,17 @@ def main():
         )
     )
 
+    train_samples = len(train_loader.dataset)
+    validation_samples = len(validation_loader.dataset)
+
     print(
-        f"Training batches: "
-        f"{len(train_loader):,}"
+        f"Training batches:"
+        f"{train_samples:,}"
     )
 
     print(
-        f"Validation batches: "
-        f"{len(validation_loader):,}"
+        f"Validation batches:"
+        f"{validation_samples:,}"
     )
 
     sample_images, sample_labels = next(
@@ -255,6 +263,10 @@ def main():
 
     training_settings = {
         "condition": condition,
+        "train_samples": train_samples,
+        "validation_samples": validation_samples,
+        "training_batches": len(train_loader),
+        "validation_batches": len(validation_loader),
         "max_epochs": MAX_EPOCHS,
         "learning_rate": LEARNING_RATE,
         "weight_decay": WEIGHT_DECAY,
@@ -315,13 +327,7 @@ def main():
             training_settings=(
                 training_settings
             ),
-            data_path=TRAIN_DATA,
-            train_indices_path=(
-                TRAIN_INDICES_PATH
-            ),
-            val_indices_path=(
-                VAL_INDICES_PATH
-            ),
+            data_path=TRAIN_DATA
         )
 
     # ------------------------------------------------
