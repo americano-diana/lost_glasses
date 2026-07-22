@@ -1,8 +1,7 @@
 """
 train.py
 
-Reusable training utilities for pretraining the custom AlexNet
-architecture on Ecoset.
+Reusable training utilities for training  AlexNet
 
 Each experiment trains one independent model under one condition:
 
@@ -430,16 +429,27 @@ def load_checkpoint(
 # History utilities
 # ============================================================
 
+# ============================================================
+# History utilities
+# ============================================================
+
 def create_empty_history():
     """
-    Create a new training-history dictionary.
+    Create the training-history dictionary.
+
+    Clear and blurred validation metrics are stored separately.
+    The selection loss is the mean of clear and blurred
+    validation loss and is used to select best.pt.
     """
     return {
         "epoch": [],
         "training_loss": [],
-        "validation_loss": [],
         "training_accuracy": [],
-        "validation_accuracy": [],
+        "clear_validation_loss": [],
+        "clear_validation_accuracy": [],
+        "blur_validation_loss": [],
+        "blur_validation_accuracy": [],
+        "selection_loss": [],
         "learning_rate": [],
     }
 
@@ -521,7 +531,8 @@ def save_history_csv(
 def train_model(
     model: nn.Module,
     train_loader,
-    validation_loader,
+    clear_validation_loader,
+    blur_validation_loader,
     loss_function: nn.Module,
     optimizer: torch.optim.Optimizer,
     scheduler,
@@ -537,7 +548,16 @@ def train_model(
     use_wandb: bool = False,
 ):
     """
-    Train one model under one Ecoset condition.
+    Fine-tune an ImageNet-pretrained AlexNet.
+
+    The model is trained using the requested training condition
+    and evaluated after every epoch on:
+
+    1. clear ImageNet validation images;
+    2. blurred versions of the same validation images.
+
+    best.pt is selected using the mean of clear and blurred
+    validation loss.
 
     Parameters
     ----------
@@ -545,18 +565,18 @@ def train_model(
         One of "clear", "mixed", or "blur".
 
     resume_checkpoint:
-        Optional path to a saved last.pt checkpoint.
+        Optional path to a previous last.pt checkpoint.
 
     Returns
     -------
     history:
         Complete training history.
 
-    best_validation_loss:
-        Lowest validation loss observed.
+    best_selection_loss:
+        Lowest mean clear/blur validation loss.
 
     final_epoch:
-        Final completed epoch.
+        Last completed epoch.
     """
     if condition not in {
         "clear",
@@ -564,8 +584,8 @@ def train_model(
         "blur",
     }:
         raise ValueError(
-            "condition must be 'clear', "
-            "'mixed', or 'blur'."
+            "condition must be "
+            "'clear', 'mixed', or 'blur'."
         )
 
     checkpoint_directory = Path(
@@ -590,8 +610,12 @@ def train_model(
     history = create_empty_history()
 
     starting_epoch = 0
-    best_validation_loss = float("inf")
+    best_selection_loss = float("inf")
     epochs_without_improvement = 0
+
+    # ------------------------------------------------
+    # Resume
+    # ------------------------------------------------
 
     if resume_checkpoint is not None:
         checkpoint = load_checkpoint(
@@ -613,14 +637,15 @@ def train_model(
         ):
             raise ValueError(
                 "Checkpoint condition does not match "
-                f"the requested condition: "
+                "the requested condition: "
                 f"{saved_condition!r} versus "
                 f"{condition!r}."
             )
 
         starting_epoch = checkpoint["epoch"]
 
-        best_validation_loss = checkpoint.get(
+        # Old checkpoints may use this name.
+        best_selection_loss = checkpoint.get(
             "best_validation_loss",
             float("inf"),
         )
@@ -638,7 +663,7 @@ def train_model(
         )
 
         print(
-            f"Resuming from epoch "
+            f"Resuming from completed epoch "
             f"{starting_epoch}."
         )
 
@@ -650,33 +675,36 @@ def train_model(
 
         return (
             history,
-            best_validation_loss,
+            best_selection_loss,
             starting_epoch,
         )
 
     print()
     print("=" * 70)
-    print(
-        f"Training condition: {condition}"
-    )
-    print(
-        f"Starting epoch: {starting_epoch + 1}"
-    )
-    print(
-        f"Maximum epoch: {max_epochs}"
-    )
-    print(
-        f"Automatic mixed precision: {amp_enabled}"
-    )
+    print("ImageNet AlexNet fine-tuning")
+    print("=" * 70)
+    print(f"Training condition: {condition}")
+    print(f"Starting epoch: {starting_epoch + 1}")
+    print(f"Maximum epoch: {max_epochs}")
+    print(f"Automatic mixed precision: {amp_enabled}")
     print("=" * 70)
 
     final_epoch = starting_epoch
+
+    # ------------------------------------------------
+    # Epoch loop
+    # ------------------------------------------------
 
     for epoch in range(
         starting_epoch + 1,
         max_epochs + 1,
     ):
         final_epoch = epoch
+
+        print()
+        print(
+            f"Epoch {epoch}/{max_epochs}"
+        )
 
         train_metrics = train_one_epoch(
             model=model,
@@ -688,58 +716,112 @@ def train_model(
             use_amp=amp_enabled,
         )
 
-        validation_metrics = evaluate(
+        print("Evaluating clear validation images...")
+
+        clear_validation_metrics = evaluate(
             model=model,
-            dataloader=validation_loader,
+            dataloader=clear_validation_loader,
             loss_function=loss_function,
             device=device,
             use_amp=amp_enabled,
         )
 
-        validation_loss = (
-            validation_metrics["loss"]
+        print("Evaluating blurred validation images...")
+
+        blur_validation_metrics = evaluate(
+            model=model,
+            dataloader=blur_validation_loader,
+            loss_function=loss_function,
+            device=device,
+            use_amp=amp_enabled,
         )
 
-        # ReduceLROnPlateau uses validation loss.
+        clear_validation_loss = (
+            clear_validation_metrics["loss"]
+        )
+
+        blur_validation_loss = (
+            blur_validation_metrics["loss"]
+        )
+
+        # Equal weighting prevents optimization from focusing
+        # exclusively on clear or blurred validation images.
+        selection_loss = (
+            clear_validation_loss
+            + blur_validation_loss
+        ) / 2.0
+
+        # ReduceLROnPlateau follows the same metric used to
+        # select the best checkpoint.
         if scheduler is not None:
             scheduler.step(
-                validation_loss
+                selection_loss
             )
 
         current_learning_rate = (
             optimizer.param_groups[0]["lr"]
         )
 
-        history["epoch"].append(epoch)
+        # ------------------------------------------------
+        # History
+        # ------------------------------------------------
+
+        history["epoch"].append(
+            epoch
+        )
 
         history["training_loss"].append(
             train_metrics["loss"]
-        )
-
-        history["validation_loss"].append(
-            validation_metrics["loss"]
         )
 
         history["training_accuracy"].append(
             train_metrics["accuracy"]
         )
 
-        history["validation_accuracy"].append(
-            validation_metrics["accuracy"]
+        history[
+            "clear_validation_loss"
+        ].append(
+            clear_validation_metrics["loss"]
+        )
+
+        history[
+            "clear_validation_accuracy"
+        ].append(
+            clear_validation_metrics["accuracy"]
+        )
+
+        history[
+            "blur_validation_loss"
+        ].append(
+            blur_validation_metrics["loss"]
+        )
+
+        history[
+            "blur_validation_accuracy"
+        ].append(
+            blur_validation_metrics["accuracy"]
+        )
+
+        history["selection_loss"].append(
+            selection_loss
         )
 
         history["learning_rate"].append(
             current_learning_rate
         )
 
+        # ------------------------------------------------
+        # Best checkpoint
+        # ------------------------------------------------
+
         improved = (
-            validation_loss
-            < best_validation_loss
+            selection_loss
+            < best_selection_loss
         )
 
         if improved:
-            best_validation_loss = (
-                validation_loss
+            best_selection_loss = (
+                selection_loss
             )
 
             epochs_without_improvement = 0
@@ -755,16 +837,14 @@ def train_model(
                 scaler=scaler,
                 epoch=epoch,
                 best_validation_loss=(
-                    best_validation_loss
+                    best_selection_loss
                 ),
                 epochs_without_improvement=(
                     epochs_without_improvement
                 ),
                 history=history,
                 model_settings=model_settings,
-                training_settings=(
-                    training_settings
-                ),
+                training_settings=training_settings,
                 condition=condition,
             )
 
@@ -776,7 +856,10 @@ def train_model(
             epochs_without_improvement += 1
             checkpoint_message = ""
 
-        # Save a resumable checkpoint after every epoch.
+        # ------------------------------------------------
+        # Latest resumable checkpoint
+        # ------------------------------------------------
+
         save_checkpoint(
             path=(
                 checkpoint_directory
@@ -788,16 +871,14 @@ def train_model(
             scaler=scaler,
             epoch=epoch,
             best_validation_loss=(
-                best_validation_loss
+                best_selection_loss
             ),
             epochs_without_improvement=(
                 epochs_without_improvement
             ),
             history=history,
             model_settings=model_settings,
-            training_settings=(
-                training_settings
-            ),
+            training_settings=training_settings,
             condition=condition,
         )
 
@@ -817,19 +898,33 @@ def train_model(
             ),
         )
 
+        # ------------------------------------------------
+        # Console summary
+        # ------------------------------------------------
+
         print(
             f"Epoch {epoch:03d}/{max_epochs:03d} | "
             f"train loss: "
             f"{train_metrics['loss']:.4f} | "
-            f"val loss: "
-            f"{validation_metrics['loss']:.4f} | "
             f"train acc: "
             f"{train_metrics['accuracy']:.2f}% | "
-            f"val acc: "
-            f"{validation_metrics['accuracy']:.2f}% | "
+            f"clear val loss: "
+            f"{clear_validation_metrics['loss']:.4f} | "
+            f"clear val acc: "
+            f"{clear_validation_metrics['accuracy']:.2f}% | "
+            f"blur val loss: "
+            f"{blur_validation_metrics['loss']:.4f} | "
+            f"blur val acc: "
+            f"{blur_validation_metrics['accuracy']:.2f}% | "
+            f"selection loss: "
+            f"{selection_loss:.4f} | "
             f"lr: {current_learning_rate:.2e}"
             f"{checkpoint_message}"
         )
+
+        # ------------------------------------------------
+        # W&B
+        # ------------------------------------------------
 
         if use_wandb:
             import wandb
@@ -843,13 +938,28 @@ def train_model(
                     "train/accuracy": (
                         train_metrics["accuracy"]
                     ),
-                    "validation/loss": (
-                        validation_metrics["loss"]
+                    "validation_clear/loss": (
+                        clear_validation_metrics[
+                            "loss"
+                        ]
                     ),
-                    "validation/accuracy": (
-                        validation_metrics[
+                    "validation_clear/accuracy": (
+                        clear_validation_metrics[
                             "accuracy"
                         ]
+                    ),
+                    "validation_blur/loss": (
+                        blur_validation_metrics[
+                            "loss"
+                        ]
+                    ),
+                    "validation_blur/accuracy": (
+                        blur_validation_metrics[
+                            "accuracy"
+                        ]
+                    ),
+                    "validation/selection_loss": (
+                        selection_loss
                     ),
                     "learning_rate": (
                         current_learning_rate
@@ -858,6 +968,10 @@ def train_model(
                 step=epoch,
             )
 
+        # ------------------------------------------------
+        # Early stopping
+        # ------------------------------------------------
+
         if (
             epochs_without_improvement
             >= early_stopping_patience
@@ -865,17 +979,16 @@ def train_model(
             print(
                 "Early stopping triggered after "
                 f"{epochs_without_improvement} "
-                "epochs without validation-loss "
-                "improvement."
+                "epochs without improvement in "
+                "mean clear/blur validation loss."
             )
             break
 
     return (
         history,
-        best_validation_loss,
+        best_selection_loss,
         final_epoch,
     )
-
 
 # ============================================================
 # Plot training results
@@ -888,9 +1001,7 @@ def plot_training_history(
     show: bool = False,
 ):
     """
-    Save separate loss and accuracy figures.
-
-    Separate figures are used so that the scales remain readable.
+    Save fine-tuning loss and accuracy plots.
     """
     save_directory = Path(
         save_directory
@@ -913,7 +1024,7 @@ def plot_training_history(
     # ------------------------------------------------
 
     plt.figure(
-        figsize=(8, 5)
+        figsize=(9, 5)
     )
 
     plt.plot(
@@ -925,9 +1036,24 @@ def plot_training_history(
 
     plt.plot(
         epochs,
-        history["validation_loss"],
+        history["clear_validation_loss"],
         marker="o",
-        label="Validation loss",
+        label="Clear validation loss",
+    )
+
+    plt.plot(
+        epochs,
+        history["blur_validation_loss"],
+        marker="o",
+        label="Blur validation loss",
+    )
+
+    plt.plot(
+        epochs,
+        history["selection_loss"],
+        marker="o",
+        linestyle="--",
+        label="Mean validation loss",
     )
 
     plt.xlabel("Epoch")
@@ -955,7 +1081,7 @@ def plot_training_history(
     # ------------------------------------------------
 
     plt.figure(
-        figsize=(8, 5)
+        figsize=(9, 5)
     )
 
     plt.plot(
@@ -967,13 +1093,24 @@ def plot_training_history(
 
     plt.plot(
         epochs,
-        history["validation_accuracy"],
+        history[
+            "clear_validation_accuracy"
+        ],
         marker="o",
-        label="Validation accuracy",
+        label="Clear validation accuracy",
+    )
+
+    plt.plot(
+        epochs,
+        history[
+            "blur_validation_accuracy"
+        ],
+        marker="o",
+        label="Blur validation accuracy",
     )
 
     plt.xlabel("Epoch")
-    plt.ylabel("Accuracy (%)")
+    plt.ylabel("Top-1 accuracy (%)")
     plt.title(
         f"{title}: accuracy"
     )

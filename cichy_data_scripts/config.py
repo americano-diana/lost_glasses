@@ -25,20 +25,32 @@ HOME_ROOT = Path.home()
 PROJECT_NAME = "lost_glasses"
 PROJECT_ROOT = SCRATCH_ROOT / PROJECT_NAME
 
-# Ecoset data path 
-_ecoset_path = os.getenv("TRAIN_DATA_PATH") 
-if _ecoset_path is None: 
-    raise RuntimeError( "ECOSET_DATA_PATH was not found in the environment. " "Add it to your .env file." ) 
-TRAIN_DATA = Path(_ecoset_path)
+# Imagenet dataset path
+imagenet_path = os.getenv("TRAIN_DATA_PATH") 
+if imagenet_path is None:
+    raise RuntimeError( "TRAIN_DATA_PATH was not found in the environment. " "Add it to your .env file." ) 
+IMAGENET_ROOT = Path(imagenet_path)
+
+if not (IMAGENET_ROOT / "train").is_dir():
+    raise FileNotFoundError(
+        f"ImageNet train directory not found: "
+        f"{IMAGENET_ROOT / 'train'}"
+    )
+
+if not (IMAGENET_ROOT / "val").is_dir():
+    raise FileNotFoundError(
+        f"ImageNet validation directory not found: "
+        f"{IMAGENET_ROOT / 'val'}"
+    )
 
 # Sub-indices splits testing
-#SPLIT_DIR = PROJECT_ROOT / "splits" 
-#TRAIN_INDICES_PATH = ( SPLIT_DIR / "ecoset_train_300000_seed42.npy" ) 
-#VAL_INDICES_PATH = ( SPLIT_DIR / "ecoset_val_10000_seed42.npy" )
+SPLIT_DIR = PROJECT_ROOT / "splits" 
+TRAIN_INDICES_PATH = SPLIT_DIR / "imagenet_train_100000_seed42.npy"
+VAL_INDICES_PATH =  SPLIT_DIR / "imagenet_val_10000_seed42.npy"
 
-# Subsets for testing
-#TRAIN_SUBSET_SIZE = 10_000
-#VAL_SUBSET_SIZE = 1_000
+# Subsets for fine-tuning
+TRAIN_SUBSET_SIZE = 100_000
+VAL_SUBSET_SIZE = 10_000
 
 # Output and checkpoints in /home
 # Checkpoints and logs are kept under /home because scratch # storage may be temporary or periodically cleaned. 
@@ -55,7 +67,7 @@ CICHY_IMAGE_DIR = ( CICHY_DATA / "92_Image_Set" / "92images")
 # ============================================================
 
 # Change name of experiment
-EXPERIMENT_NAME = "clear_alexnet_downscaled2_ecoset"
+EXPERIMENT_NAME = "finetuning_alexnet_blurry"
 
 # Set seed number for reproducibility
 SEED = 42
@@ -65,13 +77,8 @@ DEVICE = torch.device(
     "cuda" if torch.cuda.is_available() else "cpu"
 )
 
-# ============================================================
-# Model config
-# ============================================================
-
-# Model architecture params
-DOWNSCALE_FACTOR = 2 # None or 1 = full AlexNet, 2 = half
-NUM_CLASSES = 565 # EcoSet data classes
+# Load pre-trained alexnet, freeze layers, train only last network
+TRAINABLE_CLASSIFIER_LAYERS = 2
 
 # --------------------------------------------------
 # Dynamic blur params
@@ -82,11 +89,11 @@ NUM_CLASSES = 565 # EcoSet data classes
 BLUR_PROBABILITY = 0.5
 
 # Gaussian blur requires a positive odd integer.
-BLUR_KERNEL_SIZE = 15
+BLUR_KERNEL_SIZE = 11
 
 # A new sigma is sampled for every blurred image.
-BLUR_SIGMA_MIN = 0.5
-BLUR_SIGMA_MAX = 4.0
+BLUR_SIGMA_MIN = 0.1
+BLUR_SIGMA_MAX = 5.0
 
 # ------------------------------------------------
 # DataLoader
@@ -94,15 +101,16 @@ BLUR_SIGMA_MAX = 4.0
 
 # Ecoset images are stored at 256 × 256. During training, # use RandomCrop(224); during validation, use CenterCrop(224).
 IMAGE_SIZE = 224
+RESIZE_SIZE = 256
 
 MEAN = [ 0.485, 0.456, 0.406, ] 
 STD = [ 0.229, 0.224, 0.225, ]
 
-BATCH_SIZE_TRAIN = 128
-BATCH_SIZE_VAL = 256
+BATCH_SIZE_TRAIN = 256
+BATCH_SIZE_VAL = 512
 
 # 0 on a notebook, 2 or 4 if on a cluster
-NUM_WORKERS = 4
+NUM_WORKERS = 8
 PIN_MEMORY = True
 
 # persistent_workers is invalid when NUM_WORKERS == 0. 
@@ -116,14 +124,14 @@ USE_AMP = True
 # ------------------------------------------------
 # Each condition is a separate training run
 # choose clear, mixed or blur
-TRAINING_CONDITION = "clear"
+TRAINING_CONDITION = "mixed"
 
-MAX_EPOCHS = 15
+MAX_EPOCHS = 10
 
-LEARNING_RATE = 1e-3
+LEARNING_RATE = 1e-4
 WEIGHT_DECAY = 1e-4
 
-EARLY_STOPPING_PATIENCE = 5
+EARLY_STOPPING_PATIENCE = 3
 
 # ------------------------------------------------
 # Learning-rate scheduler
@@ -132,26 +140,27 @@ EARLY_STOPPING_PATIENCE = 5
 # Reduce the learning rate when validation loss stops improving, intended for ReduceLROnPlateau
 SCHEDULER_FACTOR = 0.5
 SCHEDULER_PATIENCE = 2
-SCHEDULER_MIN_LR = 1e-7
+SCHEDULER_MIN_LR = 1e-6
 
 # ============================================================ 
 # # Checkpointing 
 # # ============================================================ 
-SAVE_LAST_CHECKPOINT = True 
-SAVE_BEST_CHECKPOINT = True 
+#AVE_LAST_CHECKPOINT = True 
+#AVE_BEST_CHECKPOINT = True 
 
 # Resume from this path when provided. 
 # # Example: # RESUME_CHECKPOINT = CHECKPOINT_DIR / "alexnet_ecoset_clear" / "last.pt" 
 RESUME_CHECKPOINT = None
-# Set True only when intentionally creating a new
-# shared initialization for a new experiment.
-CREATE_NEW_INITIALIZATION = False
 # ------------------------------------------------
 # Optional: Weights & Biases set-up to see training and val losses
 # ------------------------------------------------
 USE_WANDB = True
 WANDB_ENTITY = os.getenv("WANDB_PATH")
-WANDB_PROJECT = "lost_glasses"                        
-WANDB_RUN_NAME = "clear_ecoset_alexnet_pretraining"
-WANDB_TAGS = ["alexnet", "pre-train", "ecoset"]
-WANDB_NOTES = "Full pre-training AlexNet on Ecoset"
+WANDB_PROJECT = "lost_glasses"      
+WANDB_RUN_NAME = "imagenet_alexnet_blur_finetuning"
+WANDB_TAGS = ["alexnet", "pre-train", "imagenet"]
+WANDB_NOTES = (
+    "Fine-tuning the final two classifier layers of an "
+    "ImageNet-pretrained AlexNet using a dynamic mixture "
+    "of clear and Gaussian-blurred ImageNet images."
+)
