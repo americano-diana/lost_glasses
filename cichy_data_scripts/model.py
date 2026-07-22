@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 
 # --------------------------------------------------
-# Flexible model architecture
+# Flexible AlexNet architecture
 # We can change output and downscaling factor
 # --------------------------------------------------
 
