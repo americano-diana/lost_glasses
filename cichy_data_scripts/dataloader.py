@@ -29,7 +29,7 @@ import torch
 from torch.utils.data import DataLoader, Subset
 from torchvision import datasets, transforms
 
-from config import (
+from .config import (
     IMAGENET_ROOT,
     BATCH_SIZE_TRAIN,
     BATCH_SIZE_VAL,
@@ -437,25 +437,44 @@ def create_dataloaders(
         shuffle=True,
         generator=train_generator,
         drop_last=False,
-        **common_arguments,
+        num_workers=NUM_WORKERS,
+        pin_memory=PIN_MEMORY,
+        persistent_workers=False,
+        prefetch_factor=(
+            PREFETCH_FACTOR
+            if NUM_WORKERS > 0
+            else None
+        ),
     )
 
     clear_val_loader = DataLoader(
         clear_val_dataset,
         batch_size=BATCH_SIZE_VAL,
         shuffle=False,
-        generator=validation_generator,
         drop_last=False,
-        **common_arguments,
+        num_workers=min(NUM_WORKERS, 2),
+        pin_memory=PIN_MEMORY,
+        persistent_workers=False,
+        prefetch_factor=(
+            2
+            if NUM_WORKERS > 0
+            else None
+        ),
     )
 
     blur_val_loader = DataLoader(
         blur_val_dataset,
         batch_size=BATCH_SIZE_VAL,
         shuffle=False,
-        generator=validation_generator,
         drop_last=False,
-        **common_arguments,
+        num_workers=min(NUM_WORKERS, 2),
+        pin_memory=PIN_MEMORY,
+        persistent_workers=False,
+        prefetch_factor=(
+            2
+            if NUM_WORKERS > 0
+            else None
+        ),
     )
 
     # ------------------------------------------------

@@ -10,7 +10,7 @@ import numpy as np
 from torchvision.datasets import ImageFolder
 
 
-from config import (
+from .config import (
     IMAGENET_ROOT,
     SEED,
     TRAIN_SUBSET_SIZE,

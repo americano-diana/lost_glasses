@@ -22,7 +22,7 @@ from torchvision.models import (
     alexnet,
 )
 
-from config import (
+from .config import (
     BATCH_SIZE_TRAIN,
     BATCH_SIZE_VAL,
     BLUR_KERNEL_SIZE,
@@ -56,12 +56,12 @@ from config import (
     WEIGHT_DECAY,
 )
 
-from dataloader import create_dataloaders
-from train import (
+from .dataloader import create_dataloaders
+from .train import (
     plot_training_history,
     train_model,
 )
-from utils import (
+from .utils import (
     initialize_wandb,
     set_seed,
 )
@@ -389,11 +389,7 @@ def main():
 
     print(
         "Trainable percentage: "
-        f"{(
-            100.0
-            * trainable_parameters
-            / total_parameters
-        ):.2f}%"
+        f"{(100.0 * trainable_parameters / total_parameters):.2f}%"
     )
 
     print(

@@ -45,12 +45,12 @@ if not (IMAGENET_ROOT / "val").is_dir():
 
 # Sub-indices splits testing
 SPLIT_DIR = PROJECT_ROOT / "splits" 
-TRAIN_INDICES_PATH = SPLIT_DIR / "imagenet_train_100000_seed42.npy"
-VAL_INDICES_PATH =  SPLIT_DIR / "imagenet_val_10000_seed42.npy"
+TRAIN_INDICES_PATH = SPLIT_DIR / "imagenet_train_50000_seed42.npy"
+VAL_INDICES_PATH =  SPLIT_DIR / "imagenet_val_2000_seed42.npy"
 
 # Subsets for fine-tuning
-TRAIN_SUBSET_SIZE = 100_000
-VAL_SUBSET_SIZE = 10_000
+TRAIN_SUBSET_SIZE = 50_000
+VAL_SUBSET_SIZE = 2_000
 
 # Output and checkpoints in /home
 # Checkpoints and logs are kept under /home because scratch # storage may be temporary or periodically cleaned. 
@@ -107,15 +107,15 @@ MEAN = [ 0.485, 0.456, 0.406, ]
 STD = [ 0.229, 0.224, 0.225, ]
 
 BATCH_SIZE_TRAIN = 256
-BATCH_SIZE_VAL = 512
+BATCH_SIZE_VAL = 256
 
 # 0 on a notebook, 2 or 4 if on a cluster
-NUM_WORKERS = 8
+NUM_WORKERS = 2
 PIN_MEMORY = True
 
 # persistent_workers is invalid when NUM_WORKERS == 0. 
 PERSISTENT_WORKERS = NUM_WORKERS > 0 
-PREFETCH_FACTOR = 4
+PREFETCH_FACTOR = 2
 
 USE_AMP = True
 
@@ -126,12 +126,12 @@ USE_AMP = True
 # choose clear, mixed or blur
 TRAINING_CONDITION = "mixed"
 
-MAX_EPOCHS = 10
+MAX_EPOCHS = 5
 
 LEARNING_RATE = 1e-4
 WEIGHT_DECAY = 1e-4
 
-EARLY_STOPPING_PATIENCE = 3
+EARLY_STOPPING_PATIENCE = 2
 
 # ------------------------------------------------
 # Learning-rate scheduler
