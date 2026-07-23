@@ -59,7 +59,7 @@ CHECKPOINT_DIR = OUTPUT_DIR / "checkpoints"
 LOG_DIR = OUTPUT_DIR / "logs"
 
 # Define folder with the raw fmri data
-CICHY_DATA = PROJECT_ROOT / "cichy_data"
+CICHY_DATA = PROJECT_ROOT / "cichy_data" / "92_Image_Set"
 CICHY_IMAGE_DIR = ( CICHY_DATA / "92_Image_Set" / "92images")
 
 # ============================================================
